@@ -1,5 +1,7 @@
 # House Sale Price Prediciton - Neural Network (Pytorch)
 
+This was Unviersity Coursework that has been preovously submitted and shows my learning as obviously much fo this can be improved.
+
 A simple Neural Network made with pytorch to predict the sale price of properties in Melbourne from a variety of pieces of inforamtion about the house that provide information such as size and location.
 The Dataset used is from Kaggle and can be found below:
 https://www.kaggle.com/anthonypino/melbourne-housing-market
