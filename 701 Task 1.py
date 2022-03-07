@@ -1,46 +1,43 @@
 import pandas as pd
 import numpy as np
 import datetime as dt
-import tensorflow as tf
+import torch.nn as nn
+import torch.optim as optim
 import torch
-import matplotlib.pyplot as plt
 from sklearn.preprocessing import LabelBinarizer
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.model_selection import train_test_split
+#from time import time
 
-from scipy.ndimage import label
+# Neural Network model
+input_layer_size = 376
+hidden_layers_sizes = [128, 64, 32]
+output_layer_size = 1
 
-
-
-#torch_tensor_output = torch.tensor(df['output'].values)
-#torch_tensor_vectors = torch.from_numpy(df['vector'].values)
-
+model = nn.Sequential(nn.Linear(input_layer_size, hidden_layers_sizes[0]),
+                      nn.ReLU(),
+                      nn.Linear(hidden_layers_sizes[0], hidden_layers_sizes[1]),
+                      nn.ReLU(),
+                      nn.Linear(hidden_layers_sizes[1], hidden_layers_sizes[2]),
+                      nn.ReLU(),
+                      nn.Linear(hidden_layers_sizes[2], output_layer_size),
+                      nn.ReLU()
+                      )
 
 
 class initialise_data():
     def data_loader(self):      
-        house_data = pd.read_csv('INM701-coursework/Dataset/MELBOURNE_HOUSE_PRICES_LESS.csv')
-
+        house_data = pd.read_csv('Dataset/MELBOURNE_HOUSE_PRICES_LESS.csv',usecols = [0,2,3,4,7,11])
+    
         # Removes samples without a price this includes undisclosed, missing and houses that didn't sell
         # This takes us from 63020 samples down to 48433 samples 
         subset = house_data[house_data["Price"] > 0]
         
         subset = subset.reset_index()
-        subset["Address"] = subset["Address"].str.split(" ", n = 1, expand = True)[1]
-
-        # Adjusts the address as to only display the street same so we can compare house prices based on street
-        new = subset["Address"].str.split(" ",n = 1, expand = True)
-        subset["Address"]=new[1]
-
-        # Removes the data column for most of the categorical data
-        subset = subset.drop([ "Address", "Method", "SellerG", "Postcode", "Regionname", "Propertycount", "CouncilArea"], axis=1) 
-        
+                
         # Calls date to numerical converison function and replaces dates with new numerical values
         date_values = self.dates_to_numerical(subset["Date"])
         subset["Date"] = np.asarray(date_values)
-        
-        # Remove data for after a certain date to be used as validation 
-        # CODE HERE
         
         split = train_test_split(subset, test_size = 0.15, random_state = 42)
         (x_train, x_test) = split
@@ -48,7 +45,9 @@ class initialise_data():
         # Normalises Price seperately so we can easily convert our outputs back later to get meaningfull results
         highest_price = subset["Price"].max()
         y_train = x_train["Price"] / highest_price
+        y_train = y_train.values.reshape(-1,1)
         y_test = x_test["Price"] / highest_price
+        y_test = y_test.values.reshape(-1,1)
         
         x_train, x_test = self.data_preprocessing(x_train, x_test, subset)
         
@@ -71,12 +70,12 @@ class initialise_data():
         zipBinarizer = LabelBinarizer().fit(subset["Suburb"])
         suburbs_train = zipBinarizer.transform(x_train["Suburb"])
         suburbs_test = zipBinarizer.transform(x_test["Suburb"])
-        print(suburbs_train.shape)
+        #print(suburbs_train.shape)
         
         zipBinarizer = LabelBinarizer().fit(subset["Type"])
         types_train = zipBinarizer.transform(x_train["Type"])
         types_test = zipBinarizer.transform(x_test["Type"])
-        print(types_train.shape)
+        #print(types_train.shape)
 
         # Continuous data normalisation      
         cs = MinMaxScaler()
@@ -87,55 +86,66 @@ class initialise_data():
         x_test = np.hstack([suburbs_test, types_test, continuous_test])
         
         return x_train, x_test 
-        
-        '''
-        x_train_C1 = suburbs_train
-        x_train_C2 = types_train
-        x_train_Ns = continuous_train
-        
-        return x_train_C1, x_train_C2, x_train_Ns
-        '''
+
 
 class NeuralNetwork():
-    def __init__(self, x_train, y_train, x_test, y_test):
-        self.x_train = x_train
-        self.y_train = y_train
-        self.x_test = x_test
-        self.y_test = y_test
-
+    def __init__(self, x_train, y_train, x_test, y_test, epochs):
+        self.x_train = torch.from_numpy(np.asarray(x_train))      
+        self.y_train = torch.from_numpy(np.asarray(y_train))
+        self.x_test = torch.from_numpy(np.asarray(x_test))
+        self.y_test = torch.from_numpy(np.asarray(y_test))
+        self.epochs = epochs
         
+        
+        
+
         
     def training_loop(self):
-        #x_train_categoricalA = self.x_train["Suburb"]
-        #x_train_categoricalB = self.x_train["Type"]
-        #x_train_numericals = self.x_train["Rooms", "Date", "Distance"]
+        print(self.x_train.dtype)
         
-        #model = tf.keras.models.Sequential()
+        loss = nn.MSELoss()
+        optimizer = optim.SGD(model.parameters(), lr = 0.01, momentum=0.2)
         
-
-        return xNs
-
-
+        model.eval()
+        pred_val = model(self.x_train.float())
+        before_train = loss(pred_val.flatten(), self.y_train.flatten())
+        print("Test loss before training", before_train.item())
+        
+        model.train()
+        
+        for epoch in range(self.epochs):
+            print(f"Epoch {epoch}")
+            optimizer.zero_grad()
+                    
+            #Forward pass
+            pred_vals = model(self.x_train.float())
+                 
+            #Calculating the Loss
+            output = loss(pred_vals.flatten(), self.y_train.flatten().float())
+                
+            print('Epoch {}: train loss: {}'.format(epoch, output.item()))
+            print(f"PRINTING Predicted VALUE {pred_vals.data[0].flatten()}")
+            print(f"PRINTING Y LABEL         {self.y_train[0]}")
+       
+            #Backward pass
+            output.backward()
+            optimizer.step()
+        
+        model.eval()
+        with torch.no_grad():
+            predicted_value = model(self.x_test.float())
+        post_train = loss(predicted_value.float(), self.y_test.float())
+        print("The loss after Training", post_train.item())
+        
+        return 
 
 
 create = initialise_data()
-xC1,xC2,xNs = create.data_loader() 
+x_train, y_train, x_test, y_test = create.data_loader()
 
-runNN = NeuralNetwork(xC1,xC2,xNs)
+
+epochs = 50
+
+runNN = NeuralNetwork(x_train,y_train, x_test, y_test, epochs)
 numericals = runNN.training_loop()
-print(numericals)
-
-
-
-'''
-print(a)
-print(b)
-print(len(a))
-print(len(b))  
-'''
-
-
-
-
-
 
